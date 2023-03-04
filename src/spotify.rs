@@ -123,9 +123,12 @@ impl Spotify {
 
     pub fn test_credentials(credentials: Credentials) -> Result<Session, SessionError> {
         let config = Self::session_config();
+        let session = Session::new(config, None);
+
         ASYNC_RUNTIME
-            .block_on(Session::connect(config, credentials, None, true))
-            .map(|r| r.0)
+            .block_on(session.connect(credentials, true));
+
+        return Ok(session);
     }
 
     async fn create_session(
@@ -148,9 +151,10 @@ impl Spotify {
         .expect("Could not create cache");
         debug!("opening spotify session");
         let session_config = Self::session_config();
-        Session::connect(session_config, credentials, Some(cache), true)
-            .await
-            .map(|r| r.0)
+        let session = Session::new(session_config, Some(cache));
+        session.connect(credentials, true)
+            .await;
+        return Ok(session);
     }
 
     fn init_backend(desired_backend: Option<String>) -> Option<SinkBuilder> {
@@ -211,12 +215,13 @@ impl Spotify {
         let backend =
             Self::init_backend(backend_name).expect("Could not find an audio playback backend");
         let audio_format: librespot_playback::config::AudioFormat = Default::default();
-        let (player, player_events) = Player::new(
+        let player = Player::new(
             player_config,
             session.clone(),
             mixer.get_soft_volume(),
             move || (backend)(cfg.values().backend_device.clone(), audio_format),
         );
+        let player_events = player.get_player_event_channel();
 
         let mut worker = Worker::new(
             events.clone(),
