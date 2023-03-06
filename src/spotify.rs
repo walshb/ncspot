@@ -1,8 +1,8 @@
 use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
+use librespot_core::error::Error;
 use librespot_core::session::Session;
-use librespot_core::session::SessionError;
 use librespot_playback::audio_backend::SinkBuilder;
 use librespot_playback::config::PlayerConfig;
 use librespot_playback::mixer::softmixer::SoftMixer;
@@ -121,17 +121,21 @@ impl Spotify {
         session_config
     }
 
-    pub fn test_credentials(credentials: Credentials) -> Result<Session, SessionError> {
+    pub fn test_credentials(credentials: Credentials) -> Result<(), Error> {
         let config = Self::session_config();
+
         ASYNC_RUNTIME
-            .block_on(Session::connect(config, credentials, None, true))
-            .map(|r| r.0)
+            .block_on(async {
+                let session = Session::new(config, None);
+
+                session.connect(credentials, true).await
+            })
     }
 
     async fn create_session(
         cfg: &config::Config,
         credentials: Credentials,
-    ) -> Result<Session, SessionError> {
+    ) -> Result<Session, Error> {
         let librespot_cache_path = config::cache_path("librespot");
         let audio_cache_path = match cfg.values().audio_cache.unwrap_or(true) {
             true => Some(librespot_cache_path.join("files")),
@@ -148,9 +152,14 @@ impl Spotify {
         .expect("Could not create cache");
         debug!("opening spotify session");
         let session_config = Self::session_config();
-        Session::connect(session_config, credentials, Some(cache), true)
-            .await
-            .map(|r| r.0)
+        let session = Session::new(session_config, Some(cache));
+        let res = session.connect(credentials, true)
+            .await;
+        if let Err(e) = res {
+            Err(e)
+        } else {
+            Ok(session)
+        }
     }
 
     fn init_backend(desired_backend: Option<String>) -> Option<SinkBuilder> {
@@ -211,12 +220,13 @@ impl Spotify {
         let backend =
             Self::init_backend(backend_name).expect("Could not find an audio playback backend");
         let audio_format: librespot_playback::config::AudioFormat = Default::default();
-        let (player, player_events) = Player::new(
+        let player = Player::new(
             player_config,
             session.clone(),
             mixer.get_soft_volume(),
             move || (backend)(cfg.values().backend_device.clone(), audio_format),
         );
+        let player_events = player.get_player_event_channel();
 
         let mut worker = Worker::new(
             events.clone(),
