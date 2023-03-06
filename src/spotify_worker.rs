@@ -72,26 +72,26 @@ impl Drop for Worker {
     }
 }
 
-fn get_token(
-    session: &Session,
-    sender: oneshot::Sender<Option<Token>>,
-) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    let scopes = "user-read-private,playlist-read,playlist-read-private,playlist-read-collaborative,playlist-modify-public,playlist-modify-private,user-follow-modify,user-follow-read,user-library-read,user-library-modify,user-top-read,user-read-recently-played";
-
-    let fut_session = session.clone();
-
-    return Box::pin(
-        async move {
-            let token_provider = fut_session.token_provider();
-            let fut = token_provider.get_token(scopes);
-            fut
-                .map(move |result| result.ok())
-                .map(move |result| sender.send(result).unwrap()).await
-        }
-    )
-}
-
 impl Worker {
+    fn get_token(
+        &self,
+        sender: oneshot::Sender<Option<Token>>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        let scopes = "user-read-private,playlist-read-private,playlist-read-collaborative,playlist-modify-public,playlist-modify-private,user-follow-modify,user-follow-read,user-library-read,user-library-modify,user-top-read,user-read-recently-played";
+
+        let fut_session = self.session.clone();
+
+        return Box::pin(
+            async move {
+                let token_provider = fut_session.token_provider();
+                let fut = token_provider.get_token(scopes);
+                fut
+                    .map(move |result| result.ok())
+                    .map(move |result| sender.send(result).unwrap()).await
+            }
+        )
+    }
+
     pub async fn run_loop(&mut self) {
         let mut ui_refresh = time::interval(Duration::from_millis(400));
 
@@ -138,7 +138,7 @@ impl Worker {
                         self.mixer.set_volume(volume);
                     }
                     Some(WorkerCommand::RequestToken(sender)) => {
-                        self.token_task = get_token(&self.session, sender);
+                        self.token_task = self.get_token(sender);
                     }
                     Some(WorkerCommand::Preload(playable)) => {
                         if let Ok(id) = SpotifyId::from_uri(&playable.uri()) {
