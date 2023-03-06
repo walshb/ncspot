@@ -50,6 +50,8 @@ impl Worker {
         player: Player,
         mixer: Box<dyn Mixer>,
     ) -> Worker {
+        debug!("Worker::new");
+
         Worker {
             events,
             player_events: UnboundedReceiverStream::new(player_events),
@@ -79,7 +81,7 @@ impl TokenWorker {
         self,
         sender: oneshot::Sender<Option<Token>>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        let scopes = "user-read-private,playlist-read-private,playlist-read-collaborative,playlist-modify-public,playlist-modify-private,user-follow-modify,user-follow-read,user-library-read,user-library-modify,user-top-read,user-read-recently-played";
+        let scopes = "user-read-private,playlist-read,playlist-read-private,playlist-read-collaborative,playlist-modify-public,playlist-modify-private,user-follow-modify,user-follow-read,user-library-read,user-library-modify,user-top-read,user-read-recently-played";
 
         return Box::pin(
             async move {
@@ -133,6 +135,7 @@ impl Worker {
                         self.player.stop();
                     }
                     Some(WorkerCommand::Seek(pos)) => {
+                        debug!("passing on seek {:?}", pos);
                         self.player.seek(pos);
                     }
                     Some(WorkerCommand::SetVolume(volume)) => {
@@ -166,6 +169,25 @@ impl Worker {
                             .send(Event::Player(PlayerEvent::Playing(playback_start)));
                         self.active = true;
                     }
+                    Some(LibrespotPlayerEvent::Seeked {
+                        play_request_id: _,
+                        track_id: _,
+                        position_ms,
+                    }) | Some(LibrespotPlayerEvent::PositionCorrection {
+                        play_request_id: _,
+                        track_id: _,
+                        position_ms,
+                    }) => {
+                        let position = Duration::from_millis(position_ms as u64);
+                        if self.active {
+                            let playback_start = SystemTime::now() - position;
+                            self.events
+                                .send(Event::Player(PlayerEvent::Playing(playback_start)));
+                        } else {
+                            self.events
+                                .send(Event::Player(PlayerEvent::Paused(position)));
+                        }
+                    }
                     Some(LibrespotPlayerEvent::Paused {
                         play_request_id: _,
                         track_id: _,
@@ -187,11 +209,23 @@ impl Worker {
                         self.events
                             .send(Event::Queue(QueueEvent::PreloadTrackRequest));
                     }
+                    Some(LibrespotPlayerEvent::Loading { .. })
+                        | Some(LibrespotPlayerEvent::Preloading { .. })
+                        | Some(LibrespotPlayerEvent::Unavailable { .. })
+                        | Some(LibrespotPlayerEvent::VolumeChanged { .. })
+                        | Some(LibrespotPlayerEvent::TrackChanged { .. })
+                        | Some(LibrespotPlayerEvent::SessionConnected { .. })
+                        | Some(LibrespotPlayerEvent::SessionDisconnected { .. })
+                        | Some(LibrespotPlayerEvent::SessionClientChanged { .. })
+                        | Some(LibrespotPlayerEvent::ShuffleChanged { .. })
+                        | Some(LibrespotPlayerEvent::RepeatChanged { .. })
+                        | Some(LibrespotPlayerEvent::AutoPlayChanged { .. })
+                        | Some(LibrespotPlayerEvent::FilterExplicitContentChanged { .. }) => {
+                        },
                     None => {
                         warn!("Librespot player event channel died, terminating worker");
                         break
                     },
-                    _ => {}
                 },
                 _ = ui_refresh.tick() => {
                     if self.active {

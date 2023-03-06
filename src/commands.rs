@@ -184,6 +184,7 @@ impl CommandManager {
                 Ok(None)
             }
             Command::Seek(direction) => {
+                debug!("got Command::Seek {:?}", direction);
                 match *direction {
                     SeekDirection::Relative(rel) => self.spotify.seek_relative(rel),
                     SeekDirection::Absolute(abs) => self.spotify.seek(abs),

@@ -1,8 +1,8 @@
 use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
+use librespot_core::error::Error;
 use librespot_core::session::Session;
-use librespot_core::session::SessionError;
 use librespot_playback::audio_backend::SinkBuilder;
 use librespot_playback::config::PlayerConfig;
 use librespot_playback::mixer::softmixer::SoftMixer;
@@ -121,20 +121,29 @@ impl Spotify {
         session_config
     }
 
-    pub fn test_credentials(credentials: Credentials) -> Result<Session, SessionError> {
+    pub fn test_credentials(credentials: Credentials) -> Result<Session, Error> {
         let config = Self::session_config();
-        let session = Session::new(config, None);
 
-        ASYNC_RUNTIME
-            .block_on(session.connect(credentials, true));
+        let (session, res) = ASYNC_RUNTIME
+            .block_on(async {
+                let session = Session::new(config, None);
 
-        return Ok(session);
+                let res = session.connect(credentials, true).await;
+
+                (session, res)
+            });
+
+        if let Err(e) = res {
+            Err(e)
+        } else {
+            Ok(session)
+        }
     }
 
     async fn create_session(
         cfg: &config::Config,
         credentials: Credentials,
-    ) -> Result<Session, SessionError> {
+    ) -> Result<Session, Error> {
         let librespot_cache_path = config::cache_path("librespot");
         let audio_cache_path = match cfg.values().audio_cache.unwrap_or(true) {
             true => Some(librespot_cache_path.join("files")),
@@ -152,9 +161,13 @@ impl Spotify {
         debug!("opening spotify session");
         let session_config = Self::session_config();
         let session = Session::new(session_config, Some(cache));
-        session.connect(credentials, true)
+        let res = session.connect(credentials, true)
             .await;
-        return Ok(session);
+        if let Err(e) = res {
+            Err(e)
+        } else {
+            Ok(session)
+        }
     }
 
     fn init_backend(desired_backend: Option<String>) -> Option<SinkBuilder> {
@@ -358,6 +371,7 @@ impl Spotify {
     }
 
     pub fn seek(&self, position_ms: u32) {
+        debug!("sending seek {:?}", position_ms);
         self.send_worker(WorkerCommand::Seek(position_ms));
     }
 
