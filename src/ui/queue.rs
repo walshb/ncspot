@@ -171,7 +171,7 @@ impl ViewExt for QueueView {
             }
             Command::Move(MoveMode::Playing, _) => {
                 if let Some(playing) = self.queue.get_current_index() {
-                    self.list.move_focus_to(playing);
+                    self.list.move_focus_to_index(playing);
                 }
                 return Ok(CommandResult::Consumed(None));
             }
