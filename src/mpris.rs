@@ -758,6 +758,8 @@ impl MprisManager {
     pub fn update(&self) {
         let status = get_playbackstatus(self.spotify.clone());
         let track = self.queue.get_current();
-        self.tx.send(MprisState(status, track)).unwrap();
+        if let Err(e) = self.tx.send(MprisState(status, track)) {
+            warn!("mpris update error {:?}", e);
+        }
     }
 }
