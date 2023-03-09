@@ -131,32 +131,50 @@ impl<I: ListItem + Clone> ListView<I> {
     }
 
     pub fn get_selected_index(&self) -> usize {
-        self.selected
+        if let Some(order) = self.order.read().unwrap().as_ref() {
+            order[self.selected]
+        } else {
+            self.selected
+        }
     }
 
     pub fn get_indexes_of(&self, query: &str) -> Vec<usize> {
         let content = self.content.read().unwrap();
-        content
-            .iter()
-            .enumerate()
-            .filter(|(_, i)| {
-                i.display_left(&self.library)
+        let order = self.order.read().unwrap();
+        (0..content.len())
+            .filter(|&j| {
+                let i = if let Some(ord) = order.as_ref() {
+                    ord[j]
+                } else {
+                    j
+                };
+                content[i].display_left(&self.library)
                     .to_lowercase()
                     .contains(&query[..].to_lowercase())
             })
-            .map(|(i, _)| i)
             .collect()
     }
 
-    pub fn move_focus_to(&mut self, target: usize) {
+    pub fn move_focus_to_line(&mut self, target: usize) {
         let len = self.content_len(false).saturating_sub(1);
         self.selected = min(target, len);
         self.scroller.scroll_to_y(self.selected);
     }
 
+    pub fn move_focus_to_index(&mut self, index: usize) {
+        let len = self.content_len(false).saturating_sub(1);
+        let find_index = min(index, len);
+        self.selected = if let Some(order) = self.order.read().unwrap().as_ref() {
+            order.iter().position(|&i| i == find_index).unwrap()
+        } else {
+            find_index
+        };
+        self.scroller.scroll_to_y(self.selected);
+    }
+
     pub fn move_focus(&mut self, delta: i32) {
         let new = self.selected as i32 + delta;
-        self.move_focus_to(max(new, 0) as usize);
+        self.move_focus_to_line(max(new, 0) as usize);
     }
 
     /// Append the currently selected item and all the following ones to the queue after the
@@ -400,7 +418,7 @@ impl<I: ListItem + Clone> View for ListView<I> {
                         } else {
                             // The clicked position wasn't focused yet or the item is a collection
                             // that can be opened.
-                            self.move_focus_to(clicked_row_index);
+                            self.move_focus_to_line(clicked_row_index);
                             let content = self.content.read().unwrap();
                             let clicked_list_item =
                                 content.get(self.selected).map(ListItem::as_listitem);
@@ -428,7 +446,7 @@ impl<I: ListItem + Clone> View for ListView<I> {
                 let viewport = self.scroller.content_viewport().top_left();
                 let selected_row = position.checked_sub(offset).map(|p| p.y + viewport.y);
                 if let Some(y) = selected_row.filter(|row| row < &self.content_len(false)) {
-                    self.move_focus_to(y);
+                    self.move_focus_to_line(y);
 
                     let queue = self.queue.clone();
                     let library = self.library.clone();
@@ -577,7 +595,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                     self.search_selected_index = 0;
                     match self.search_indexes.first() {
                         Some(&index) => {
-                            self.move_focus_to(index);
+                            self.move_focus_to_line(index);
                             return Ok(CommandResult::Consumed(None));
                         }
                         None => return Ok(CommandResult::Consumed(None)),
@@ -593,7 +611,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                         Ordering::Equal => 0,
                         _ => index + 1,
                     };
-                    self.move_focus_to(self.search_indexes[next_index]);
+                    self.move_focus_to_line(self.search_indexes[next_index]);
                     self.search_selected_index = next_index;
                     return Ok(CommandResult::Consumed(None));
                 }
@@ -607,7 +625,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                         Ordering::Equal => len - 1,
                         _ => index - 1,
                     };
-                    self.move_focus_to(self.search_indexes[prev_index]);
+                    self.move_focus_to_line(self.search_indexes[prev_index]);
                     self.search_selected_index = prev_index;
                     return Ok(CommandResult::Consumed(None));
                 }
@@ -619,7 +637,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                     MoveMode::Up => {
                         if self.selected > 0 {
                             match amount {
-                                MoveAmount::Extreme => self.move_focus_to(0),
+                                MoveAmount::Extreme => self.move_focus_to_line(0),
                                 MoveAmount::Float(scale) => {
                                     let amount = (self.last_size.y as f32) * scale;
                                     self.move_focus(-(amount as i32))
@@ -632,7 +650,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                     MoveMode::Down => {
                         if self.selected < last_idx {
                             match amount {
-                                MoveAmount::Extreme => self.move_focus_to(last_idx),
+                                MoveAmount::Extreme => self.move_focus_to_line(last_idx),
                                 MoveAmount::Float(scale) => {
                                     let amount = (self.last_size.y as f32) * scale;
                                     self.move_focus(amount as i32)
@@ -778,6 +796,9 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                         None => Ok(CommandResult::Consumed(None)),
                     };
                 }
+            }
+            Command::Shuffle(_) => {
+                self.search_indexes.clear();
             }
             _ => {}
         };
