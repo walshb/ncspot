@@ -1,15 +1,17 @@
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
+use std::thread;
+use std::time::{Duration, SystemTime};
 
 use cursive::traits::Nameable;
 use cursive::{Cursive, CursiveRunner};
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 
 #[cfg(unix)]
 use signal_hook::{consts::SIGHUP, consts::SIGTERM, iterator::Signals};
 
-use crate::command::Command;
+use crate::command::{Command, SeekDirection};
 use crate::commands::CommandManager;
 use crate::config::Config;
 use crate::events::{Event, EventManager};
@@ -214,6 +216,9 @@ impl Application {
         let mut signals =
             Signals::new([SIGTERM, SIGHUP]).expect("could not register signal handler");
 
+        let mut n_fails : u32 = 0;
+        let mut play_state : Option<PlayerEvent> = None;
+
         // cursive event loop
         while self.cursive.is_running() {
             self.cursive.step();
@@ -238,14 +243,47 @@ impl Application {
                         #[cfg(unix)]
                         self.ipc.publish(&state, self.queue.get_current());
 
-                        if state == PlayerEvent::FinishedTrack {
-                            self.queue.next(false);
-                        }
+                        match state {
+                            PlayerEvent::Playing(_) => {
+                                n_fails = 0;
+                                play_state = Some(state.clone());
+                            },
+                            PlayerEvent::PauseRequested
+                                | PlayerEvent::StopRequested => {
+                                    play_state = None;
+                                },
+                            PlayerEvent::FinishedTrack => {
+                                queue.next(false);
+                                play_state = None;
+                            },
+                            PlayerEvent::PlayRequested
+                                | PlayerEvent::Paused(_)
+                                | PlayerEvent::Stopped => {}
+                        };
                     }
                     Event::Queue(event) => {
                         self.queue.handle_event(event);
                     }
-                    Event::SessionDied => self.spotify.start_worker(None),
+                    Event::SessionDied => {
+                        debug!("got SessionDied. Restarting with play_state {:?}.",
+                               play_state);
+                        spotify.start_worker(None);
+                        if let Some(data) = cursive.user_data::<UserData>().cloned() {
+                            if let Some(PlayerEvent::Playing(playback_start)) = play_state {
+                                if n_fails % 2 == 0 {
+                                    let position = SystemTime::now().duration_since(playback_start).expect("Strange clock");
+                                    let position_ms = position.as_millis() as u32;
+
+                                    data.cmd.handle(&mut cursive, Command::Play);
+                                    data.cmd.handle(&mut cursive, Command::Seek(SeekDirection::Absolute(position_ms)));
+                                } else {
+                                    data.cmd.handle(&mut cursive, Command::Next);
+                                }
+                            }
+                        }
+                        thread::sleep(Duration::from_millis((3000 * n_fails) as u64));
+                        n_fails += 1;
+                    }
                     Event::IpcInput(input) => match command::parse(&input) {
                         Ok(commands) => {
                             if let Some(data) = self.cursive.user_data::<UserData>().cloned() {

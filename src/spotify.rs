@@ -38,6 +38,9 @@ pub enum PlayerEvent {
     Paused(Duration),
     Stopped,
     FinishedTrack,
+    PlayRequested,
+    PauseRequested,
+    StopRequested,
 }
 
 // TODO: Rename or document this as it isn't immediately clear what it represents/does from the
@@ -313,6 +316,9 @@ impl Spotify {
             PlayerEvent::Stopped | PlayerEvent::FinishedTrack => {
                 self.set_elapsed(None);
                 self.set_since(None);
+            }
+            PlayerEvent::PlayRequested | PlayerEvent::PauseRequested | PlayerEvent::StopRequested => {
+                return;
             }
         }
 
