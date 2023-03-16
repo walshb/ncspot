@@ -11,6 +11,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, SystemTime};
 
 use clap::{Arg, Command as ClapCommand};
 use cursive::event::EventTrigger;
@@ -18,7 +20,7 @@ use cursive::traits::Nameable;
 use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_playback::audio_backend;
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 
 #[cfg(unix)]
 use signal_hook::{consts::SIGHUP, consts::SIGTERM, iterator::Signals};
@@ -49,7 +51,7 @@ mod ipc;
 #[cfg(feature = "mpris")]
 mod mpris;
 
-use crate::command::{Command, JumpMode};
+use crate::command::{Command, JumpMode, SeekDirection};
 use crate::commands::CommandManager;
 use crate::config::{cache_path, Config};
 use crate::events::{Event, EventManager};
@@ -378,6 +380,9 @@ fn main() -> Result<(), String> {
         .map_err(|e| e.to_string())?
     };
 
+    let mut n_fails : u32 = 0;
+    let mut play_state : Option<PlayerEvent> = None;
+
     // cursive event loop
     while cursive.is_running() {
         cursive.step();
@@ -402,14 +407,48 @@ fn main() -> Result<(), String> {
                     #[cfg(unix)]
                     ipc.publish(&state, queue.get_current());
 
-                    if state == PlayerEvent::FinishedTrack {
-                        queue.next(false);
-                    }
+                    match state {
+                        PlayerEvent::Playing(_) => {
+                            n_fails = 0;
+                            play_state = Some(state.clone());
+                        },
+                        PlayerEvent::PauseRequested
+                            | PlayerEvent::StopRequested => {
+                                play_state = None;
+                            },
+                        PlayerEvent::FinishedTrack => {
+                            queue.next(false);
+                            play_state = None;
+                        },
+                        PlayerEvent::PlayRequested
+                            | PlayerEvent::Paused(_)
+                            | PlayerEvent::Stopped => {}
+                    };
+
                 }
                 Event::Queue(event) => {
                     queue.handle_event(event);
                 }
-                Event::SessionDied => spotify.start_worker(None),
+                Event::SessionDied => {
+                    debug!("got SessionDied. Restarting with play_state {:?}.",
+                           play_state);
+                    spotify.start_worker(None);
+                    if let Some(data) = cursive.user_data::<UserData>().cloned() {
+                        if let Some(PlayerEvent::Playing(playback_start)) = play_state {
+                            if n_fails % 2 == 0 {
+                                let position = SystemTime::now().duration_since(playback_start).expect("Strange clock");
+                                let position_ms = position.as_millis() as u32;
+
+                                data.cmd.handle(&mut cursive, Command::Play);
+                                data.cmd.handle(&mut cursive, Command::Seek(SeekDirection::Absolute(position_ms)));
+                            } else {
+                                data.cmd.handle(&mut cursive, Command::Next);
+                            }
+                        }
+                    }
+                    thread::sleep(Duration::from_millis((3000 * n_fails) as u64));
+                    n_fails += 1;
+                }
                 Event::IpcInput(input) => match command::parse(&input) {
                     Ok(commands) => {
                         if let Some(data) = cursive.user_data::<UserData>().cloned() {
