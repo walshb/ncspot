@@ -122,12 +122,16 @@ impl Worker {
                         }
                     }
                     Some(WorkerCommand::Play) => {
+                        debug!("got command {:?}", cmd);
+                        self.events.send(Event::Player(PlayerEvent::PlayRequested));
                         self.player.play();
                     }
                     Some(WorkerCommand::Pause) => {
+                        self.events.send(Event::Player(PlayerEvent::PauseRequested));
                         self.player.pause();
                     }
                     Some(WorkerCommand::Stop) => {
+                        self.events.send(Event::Player(PlayerEvent::StopRequested));
                         self.player.stop();
                     }
                     Some(WorkerCommand::Seek(pos)) => {
@@ -149,7 +153,10 @@ impl Worker {
                         self.player.stop();
                         self.session.shutdown();
                     }
-                    None => info!("empty stream")
+                    None => {
+                        warn!("command stream died, terminating worker");
+                        break
+                    },
                 },
                 event = self.player_events.next() => match event {
                     Some(LibrespotPlayerEvent::Playing {
@@ -199,13 +206,16 @@ impl Worker {
                     Some(LibrespotPlayerEvent::EndOfTrack { .. }) => {
                         self.events.send(Event::Player(PlayerEvent::FinishedTrack));
                     }
+                    Some(LibrespotPlayerEvent::Unavailable { .. }) => {
+                        warn!("track unavailable, terminating worker");
+                        break;
+                    }
                     Some(LibrespotPlayerEvent::TimeToPreloadNextTrack { .. }) => {
                         self.events
                             .send(Event::Queue(QueueEvent::PreloadTrackRequest));
                     }
                     Some(LibrespotPlayerEvent::Loading { .. })
                         | Some(LibrespotPlayerEvent::Preloading { .. })
-                        | Some(LibrespotPlayerEvent::Unavailable { .. })
                         | Some(LibrespotPlayerEvent::VolumeChanged { .. })
                         | Some(LibrespotPlayerEvent::TrackChanged { .. })
                         | Some(LibrespotPlayerEvent::SessionConnected { .. })
