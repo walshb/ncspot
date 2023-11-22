@@ -9,7 +9,6 @@ use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
-use librespot_core::session::SessionError;
 use librespot_playback::audio_backend;
 use librespot_playback::audio_backend::SinkBuilder;
 use librespot_playback::config::Bitrate;
@@ -147,13 +146,16 @@ impl Spotify {
     pub fn test_credentials(
         cfg: &config::Config,
         credentials: Credentials,
-    ) -> Result<Session, SessionError> {
+    ) -> Result<(), librespot_core::error::Error> {
         let config = Self::session_config(cfg);
         ASYNC_RUNTIME
             .get()
             .unwrap()
-            .block_on(Session::connect(config, credentials, None, true))
-            .map(|r| r.0)
+            .block_on(async {
+                let session = Session::new(config, None);
+
+                session.connect(credentials, true).await
+            })
     }
 
     /// Create a [Session] that respects the user configuration in `cfg` and with the given
@@ -161,7 +163,7 @@ impl Spotify {
     async fn create_session(
         cfg: &config::Config,
         credentials: Credentials,
-    ) -> Result<Session, SessionError> {
+    ) -> Result<Session, librespot_core::error::Error> {
         let librespot_cache_path = config::cache_path("librespot");
         let audio_cache_path = if let Some(false) = cfg.values().audio_cache {
             None
@@ -179,9 +181,14 @@ impl Spotify {
         .expect("Could not create cache");
         debug!("opening spotify session");
         let session_config = Self::session_config(cfg);
-        Session::connect(session_config, credentials, Some(cache), true)
-            .await
-            .map(|r| r.0)
+        let session = Session::new(session_config, Some(cache));
+        let res = session.connect(credentials, true)
+            .await;
+        if let Err(e) = res {
+            Err(e)
+        } else {
+            Ok(session)
+        }
     }
 
     /// Create and initialize the requested audio backend.
@@ -248,12 +255,13 @@ impl Spotify {
         mixer.set_volume(volume);
 
         let audio_format: librespot_playback::config::AudioFormat = Default::default();
-        let (player, player_events) = Player::new(
+        let player = Player::new(
             player_config,
             session.clone(),
             mixer.get_soft_volume(),
             move || (backend)(cfg.values().backend_device.clone(), audio_format),
         );
+        let player_events = player.get_player_event_channel();
 
         let mut worker = Worker::new(
             events.clone(),

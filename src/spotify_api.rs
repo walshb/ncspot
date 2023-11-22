@@ -105,13 +105,15 @@ impl WebApi {
                 if let Ok(Some(token)) = token_rx.recv() {
                     *api_token.lock().unwrap() = Some(Token {
                         access_token: token.access_token,
-                        expires_in: chrono::Duration::try_seconds(token.expires_in.into()).unwrap(),
-                        scopes: HashSet::from_iter(token.scope),
+                        expires_in: chrono::Duration::seconds(token.expires_in
+                                                              .as_secs() as i64),
+                        scopes: HashSet::from_iter(token.scopes),
                         expires_at: None,
                         refresh_token: None,
                     });
                     *api_token_expiration.write().unwrap() =
-                        Utc::now() + ChronoDuration::try_seconds(token.expires_in.into()).unwrap();
+                        Utc::now() + ChronoDuration::seconds(token.expires_in
+                                                             .as_secs() as i64);
                 } else {
                     error!("Failed to update token");
                 }
