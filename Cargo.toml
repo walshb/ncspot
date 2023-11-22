@@ -37,10 +37,11 @@ zbus = {version = "3.11.1", default-features = false, features = ["tokio"], opti
 fern = "0.6"
 futures = "0.3"
 ioctl-rs = {version = "0.2", optional = true}
+lazy_static = "1.3.0"
 libc = "0.2.150"
-librespot-core = "0.4.2"
-librespot-playback = "0.4.2"
-librespot-protocol = "0.4.2"
+librespot-core = "0.5.0-dev"
+librespot-playback = "0.5.0-dev"
+librespot-protocol = "0.5.0-dev"
 log = "0.4.16"
 pancurses = {version = "0.17.0", optional = true}
 parse_duration = "2.1.1"
@@ -113,3 +114,8 @@ It is heavily inspired by ncurses MPD clients, such as ncmpc."""
 license-file = ["LICENSE"]
 priority = "optional"
 section = "sound"
+
+[patch.crates-io]
+librespot-core = { path = "../librespot/core" }
+librespot-playback = { path = "../librespot/playback" }
+librespot-protocol = { path = "../librespot/protocol" }
