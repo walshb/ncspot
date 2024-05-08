@@ -75,7 +75,7 @@ signal-hook = "0.3.0"
 [dependencies.rspotify]
 default-features = false
 features = ["client-ureq", "ureq-native-tls"]
-version = "0.13.1"
+version = "0.14.0-dev"
 
 [dependencies.cursive]
 default-features = false
@@ -123,3 +123,4 @@ section = "sound"
 librespot-core = { path = "../librespot/core" }
 librespot-playback = { path = "../librespot/playback" }
 librespot-protocol = { path = "../librespot/protocol" }
+rspotify = { path = "../rspotify" }
