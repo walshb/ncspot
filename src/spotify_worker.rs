@@ -157,25 +157,6 @@ impl Worker {
                             .send(Event::Player(PlayerEvent::Playing(playback_start)));
                         self.player_status = PlayerStatus::Playing;
                     }
-                    Some(LibrespotPlayerEvent::Seeked {
-                        play_request_id: _,
-                        track_id: _,
-                        position_ms,
-                    }) | Some(LibrespotPlayerEvent::PositionCorrection {
-                        play_request_id: _,
-                        track_id: _,
-                        position_ms,
-                    }) => {
-                        let position = Duration::from_millis(position_ms as u64);
-                        if self.active {
-                            let playback_start = SystemTime::now() - position;
-                            self.events
-                                .send(Event::Player(PlayerEvent::Playing(playback_start)));
-                        } else {
-                            self.events
-                                .send(Event::Player(PlayerEvent::Paused(position)));
-                        }
-                    }
                     Some(LibrespotPlayerEvent::Paused {
                         play_request_id: _,
                         track_id: _,
