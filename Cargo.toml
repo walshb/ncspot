@@ -46,10 +46,10 @@ fern = "0.7"
 futures = "0.3"
 ioctl-rs = {version = "0.2", optional = true}
 libc = "0.2.164"
-librespot-core = "0.6.0"
-librespot-oauth = "0.6.0"
-librespot-playback = "0.6.0"
-librespot-protocol = "0.6.0"
+librespot-core = "0.6.0-dev"
+librespot-oauth = "0.6.0-dev"
+librespot-playback = "0.6.0-dev"
+librespot-protocol = "0.6.0-dev"
 log = "0.4.22"
 pancurses = {version = "0.17.0", optional = true}
 parse_duration = "2.1.1"
@@ -121,5 +121,6 @@ section = "sound"
 
 [patch.crates-io]
 librespot-core = { path = "../librespot/core" }
+librespot-oauth = { path = "../librespot/oauth" }
 librespot-playback = { path = "../librespot/playback" }
 librespot-protocol = { path = "../librespot/protocol" }
